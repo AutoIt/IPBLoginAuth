@@ -36,6 +36,7 @@
         "IPBDBPassword": "",
         "IPBDBDatabase": "",
         "IPBDBPrefix": "",
+        "IPBVersion": "3",
 
         "IPBGroupValidating": 1,
         "IPBGroupMap": {
