@@ -101,6 +101,10 @@ class IPBAuth
             $username = IPBAuth::cleanValue($username);
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
@@ -157,6 +161,13 @@ class IPBAuth
             $username = IPBAuth::cleanValue($user->getName());
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+                $name_field = 'name';
+            } else {
+                $name_field = 'members_display_name';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
@@ -175,7 +186,7 @@ class IPBAuth
             }
 
             // Update user
-            $stmt = $sql->prepare("SELECT member_group_id, mgroup_others, email, members_display_name FROM {$prefix}members WHERE lower(name) = lower(?)");
+            $stmt = $sql->prepare("SELECT member_group_id, mgroup_others, email, {$name_field} FROM {$prefix}members WHERE lower(name) = lower(?)");
             if ($stmt) {
                 try {
                     $stmt->bind_param('s', $username);
@@ -231,6 +242,10 @@ class IPBAuth
             $username = IPBAuth::cleanValue($username);
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
