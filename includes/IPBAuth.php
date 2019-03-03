@@ -267,4 +267,33 @@ class IPBAuth
         }
     }
 
+    /**
+     * Verifies if a supplied password matches the password hash in the IPB database.
+     *
+     * @param $password
+     * @param $hash
+     * @param $salt
+     * @return bool
+     */
+    public static function checkIPBPassword($password, $hash, $salt)
+    {
+        /* IPB uses a different method in 3.x, 4.0 and 4.4 */
+        if ($salt == NULL) {
+            /* IPB 4.4+ */
+            return password_verify($password, $hash);
+            
+        } elseif  ( mb_strlen( $salt ) === 22 )	{
+            /* IPB 4.0 */
+            $generatedHash = crypt( $password, '$2a$13$' . $salt );
+            return ($generatedHash == $hash);
+
+        } else {
+            /* 3.x */
+            $password = IPBAuth::cleanValue($password);
+            $generatedHash = md5(md5($salt) . md5($password));
+            return ($generatedHash == $hash);
+
+		}
+    }
+
 }
