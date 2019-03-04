@@ -117,12 +117,7 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
                     if ($stmt->num_rows == 1) {
                         $stmt->bind_result($name, $members_pass_hash, $members_pass_salt);
                         if ($stmt->fetch()) {
-                            if (strpos($members_pass_hash, '$') === 0) {
-                                $success = password_verify($password, $members_pass_hash);
-                            } else {
-                                $password = IPBAuth::cleanValue($password);
-                                $success = $members_pass_hash === md5(md5($members_pass_salt).md5($password));
-                            }
+                            $success = IPBAuth::checkIPBPassword($password, $members_pass_hash, $members_pass_salt);
                         }
                     }
                     if ($success) {
