@@ -74,8 +74,16 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
 
             $username = IPBAuth::cleanValue($req->username);
             $username = $sql->real_escape_string($username);
-            $password = IPBAuth::cleanValue($req->password);
+            $password = $req->password;
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+                // user group(s) 'ibf_core_groups.g_view_board' value is not checked
+                $ban_check = ' AND temp_ban != -1 AND temp_ban < UNIX_TIMESTAMP()';
+            } else {
+                $ban_check = '';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
@@ -98,21 +106,26 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
             }
 
             // Check user
-            $stmt = $sql->prepare("SELECT name FROM {$prefix}members WHERE lower(name) = lower(?) AND members_pass_hash = MD5(CONCAT(MD5(members_pass_salt), MD5(?)))");
+            $stmt = $sql->prepare("SELECT name, members_pass_hash, members_pass_salt FROM {$prefix}members WHERE (lower(name) = lower(?) OR lower(email) = lower(?)) {$ban_check}");
             if ($stmt) {
                 try {
-                    $stmt->bind_param('ss', $username, $password);
+                    $stmt->bind_param('ss', $username, $username);
                     $stmt->execute();
                     $stmt->store_result();
+
+                    $success = false;
                     if ($stmt->num_rows == 1) {
-                        $stmt->bind_result($name);
+                        $stmt->bind_result($name, $members_pass_hash, $members_pass_salt);
                         if ($stmt->fetch()) {
-                            $username = User::getCanonicalName($name, 'creatable');
-                            if (!$username) {
-                                $username = $req->username;
-                            }
-                            return AuthenticationResponse::newPass($username);
+                            $success = IPBAuth::checkIPBPassword($password, $members_pass_hash, $members_pass_salt);
                         }
+                    }
+                    if ($success) {
+                        $username = User::getCanonicalName($name, 'creatable');
+                        if (!$username) {
+                            $username = $req->username;
+                        }
+                        return AuthenticationResponse::newPass($username);
                     } else {
                         return AuthenticationResponse::newFail(
                             wfMessage('no-user-error')

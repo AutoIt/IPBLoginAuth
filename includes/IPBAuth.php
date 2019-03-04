@@ -101,6 +101,10 @@ class IPBAuth
             $username = IPBAuth::cleanValue($username);
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
@@ -157,6 +161,13 @@ class IPBAuth
             $username = IPBAuth::cleanValue($user->getName());
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+                $name_field = 'name';
+            } else {
+                $name_field = 'members_display_name';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
@@ -175,7 +186,7 @@ class IPBAuth
             }
 
             // Update user
-            $stmt = $sql->prepare("SELECT member_group_id, mgroup_others, email, members_display_name FROM {$prefix}members WHERE lower(name) = lower(?)");
+            $stmt = $sql->prepare("SELECT member_group_id, mgroup_others, email, {$name_field} FROM {$prefix}members WHERE lower(name) = lower(?)");
             if ($stmt) {
                 try {
                     $stmt->bind_param('s', $username);
@@ -231,6 +242,10 @@ class IPBAuth
             $username = IPBAuth::cleanValue($username);
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
+            $ipbver = $cfg->get('IPBVersion');
+            if ($ipbver >= 4) {
+                $prefix .= 'core_';
+            }
 
             // Check underscores
             $us_username = str_replace(" ", "_", $username);
@@ -250,6 +265,35 @@ class IPBAuth
         } finally {
             $sql->close();
         }
+    }
+
+    /**
+     * Verifies if a supplied password matches the password hash in the IPB database.
+     *
+     * @param $password
+     * @param $hash
+     * @param $salt
+     * @return bool
+     */
+    public static function checkIPBPassword($password, $hash, $salt)
+    {
+        /* IPB uses a different method in 3.x, 4.0 and 4.4 */
+        if ($salt == NULL) {
+            /* IPB 4.4+ */
+            return password_verify($password, $hash);
+            
+        } elseif  ( mb_strlen( $salt ) === 22 )	{
+            /* IPB 4.0 */
+            $generatedHash = crypt( $password, '$2a$13$' . $salt );
+            return ($generatedHash == $hash);
+
+        } else {
+            /* 3.x */
+            $password = IPBAuth::cleanValue($password);
+            $generatedHash = md5(md5($salt) . md5($password));
+            return ($generatedHash == $hash);
+
+		}
     }
 
 }
