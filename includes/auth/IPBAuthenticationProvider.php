@@ -26,19 +26,13 @@ use MediaWiki\Auth\AuthenticationRequest;
 use MediaWiki\Auth\AuthenticationResponse;
 use MediaWiki\Auth\AuthManager;
 use MediaWiki\Auth\PrimaryAuthenticationProvider;
+use MediaWiki\User\UserRigorOptions;
+use Wikimedia\Rdbms\IDBAccessObject;
 
-use Hooks;
 use StatusValue;
-use User;
 
 class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
 {
-
-    public function __construct()
-    {
-        Hooks::register('UserLoggedIn', [$this, 'onUserLoggedIn']);
-    }
-
     public function autoCreatedAccount($user, $source)
     {
 
@@ -46,6 +40,9 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
 
     public function accountCreationType()
     {
+        // Returning TYPE_NONE keeps local password creation disabled for this provider.
+        // When MediaWiki auto-creates a local account after a successful external login,
+        // it stores an invalid local password hash (not the forum password).
         return PrimaryAuthenticationProvider::TYPE_NONE;
     }
 
@@ -58,6 +55,7 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
     {
         $req = AuthenticationRequest::getRequestByClass($reqs, IPBAuthenticationRequest::class);
         if (!$req) {
+            IPBAuth::getLogger()->warning('Missing authentication request payload in beginPrimaryAuthentication');
             return AuthenticationResponse::newFail(
                 wfMessage('unexpected-error')
             );
@@ -67,10 +65,24 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
         $sql = IPBAuth::getSQL();
         try {
             if ($sql->connect_errno) {
+                IPBAuth::getLogger()->error(
+                    'Forum database connection failed',
+                    [
+                        'dbHost' => $cfg->get('IPBDBHost'),
+                        'dbName' => $cfg->get('IPBDBDatabase'),
+                        'errorCode' => $sql->connect_errno,
+                        'error' => $sql->connect_error
+                    ]
+                );
                 return AuthenticationResponse::newFail(
                     wfMessage('db-access-error')
                 );
             }
+
+            IPBAuth::getLogger()->debug(
+                'Attempting IPB authentication for username "' . (string)$req->username . '"',
+                [ 'username' => $req->username ]
+            );
 
             $username = IPBAuth::cleanValue($req->username);
             $username = $sql->real_escape_string($username);
@@ -100,6 +112,10 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
                     $stmt->close();
                 }
             } else {
+                IPBAuth::getLogger()->error(
+                    'Failed to prepare underscore username query',
+                    [ 'error' => $sql->error ]
+                );
                 return AuthenticationResponse::newFail(
                     wfMessage('db-error')
                 );
@@ -121,12 +137,25 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
                         }
                     }
                     if ($success) {
-                        $username = User::getCanonicalName($name, 'creatable');
-                        if (!$username) {
+                        $canonical = $this->userNameUtils->getCanonical(
+                            $name,
+                            UserRigorOptions::RIGOR_CREATABLE
+                        );
+                        if ($canonical !== false) {
+                            $username = $canonical;
+                        } else {
                             $username = $req->username;
                         }
+                        IPBAuth::getLogger()->info(
+                            'IPB authentication passed for username "' . (string)$username . '"',
+                            [ 'username' => $username ]
+                        );
                         return AuthenticationResponse::newPass($username);
                     } else {
+                        IPBAuth::getLogger()->info(
+                            'IPB authentication failed for username "' . (string)$req->username . '"',
+                            [ 'username' => $req->username ]
+                        );
                         return AuthenticationResponse::newFail(
                             wfMessage('no-user-error')
                         );
@@ -135,10 +164,25 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
                     $stmt->close();
                 }
             } else {
+                IPBAuth::getLogger()->error(
+                    'Failed to prepare user authentication query',
+                    [ 'error' => $sql->error ]
+                );
                 return AuthenticationResponse::newFail(
                     wfMessage('db-error')
                 );
             }
+        } catch (\Throwable $e) {
+            IPBAuth::getLogger()->error(
+                'Unhandled exception during IPB authentication for username "' . (string)$req->username . '"',
+                [
+                    'username' => $req->username,
+                    'exception' => $e
+                ]
+            );
+            return AuthenticationResponse::newFail(
+                wfMessage('unexpected-error')
+            );
         } finally {
             $sql->close();
         }
@@ -154,10 +198,20 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
         }
     }
 
-    public static function onUserLoggedIn($user)
+    public function onUserLoggedIn($user)
     {
         // When a user logs in, update the local account with information from the IPB database.
-        IPBAuth::updateUser($user);
+        try {
+            IPBAuth::updateUser($user);
+        } catch (\Throwable $e) {
+            IPBAuth::getLogger()->error(
+                'Failed to synchronize local user profile after login for username "' . (string)$user->getName() . '"',
+                [
+                    'username' => $user->getName(),
+                    'exception' => $e
+                ]
+            );
+        }
     }
 
     public function providerAllowsAuthenticationDataChange(AuthenticationRequest $req, $checkData = true)
@@ -190,7 +244,7 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
         // Account creation is not implemented
     }
 
-    public function testUserExists($username, $flags = User::READ_NORMAL)
+    public function testUserExists($username, $flags = IDBAccessObject::READ_NORMAL)
     {
         return IPBAuth::userExists($username);
     }

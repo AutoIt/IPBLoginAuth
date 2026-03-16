@@ -1,13 +1,13 @@
 {
     "name": "IPBLoginAuth",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "author": "Frédéric Hannes",
     "url": "https://www.mediawiki.org/wiki/Extension:IPBAuthLogin",
     "descriptionmsg": "ipbloginauth-desc",
     "license-name": "GPLv3",
     "type": "auth",
     "requires": {
-        "MediaWiki": ">= 1.27.0"
+        "MediaWiki": ">= 1.43.0"
     },
     "ConfigRegistry": {
         "ipbloginauth": "GlobalVarConfig::newInstance"
@@ -30,17 +30,21 @@
             }
         }
     },
+    "Hooks": {
+        "UserLoggedIn": "IPBLoginAuth\\Auth\\IPBAuthenticationProvider"
+    },
     "config": {
         "IPBDBHost": "",
         "IPBDBUsername": "",
         "IPBDBPassword": "",
         "IPBDBDatabase": "",
         "IPBDBPrefix": "",
-        "IPBVersion": "3",
+        "IPBVersion": "4",
 
         "IPBGroupValidating": 1,
         "IPBGroupMap": {
             "sysop": 4
         }
-    }
+    },
+    "manifest_version": 1
 }
