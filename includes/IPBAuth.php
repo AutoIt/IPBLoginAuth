@@ -19,8 +19,9 @@
 
 namespace IPBLoginAuth;
 
-use ConfigFactory;
-use User;
+use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\MediaWikiServices;
+use MediaWiki\User\UserRigorOptions;
 
 class IPBAuth
 {
@@ -35,9 +36,21 @@ class IPBAuth
     public static function getConfig()
     {
         if (self::$config === null) {
-            self::$config = ConfigFactory::getDefaultInstance()->makeConfig('ipbloginauth');
+            self::$config = MediaWikiServices::getInstance()
+                ->getConfigFactory()
+                ->makeConfig('ipbloginauth');
         }
         return self::$config;
+    }
+
+    /**
+     * Returns the logger used by this extension.
+     *
+     * @return \Psr\Log\LoggerInterface
+     */
+    public static function getLogger()
+    {
+        return LoggerFactory::getInstance('IPBLoginAuth');
     }
 
     /**
@@ -48,12 +61,24 @@ class IPBAuth
     public static function getSQL()
     {
         $cfg = IPBAuth::getConfig();
-        return @new \mysqli(
+        $sql = @new \mysqli(
             $cfg->get('IPBDBHost'),
             $cfg->get('IPBDBUsername'),
             $cfg->get('IPBDBPassword'),
             $cfg->get('IPBDBDatabase')
         );
+        if ($sql->connect_errno) {
+            self::getLogger()->error(
+                'Unable to connect to forum database',
+                [
+                    'dbHost' => $cfg->get('IPBDBHost'),
+                    'dbName' => $cfg->get('IPBDBDatabase'),
+                    'errorCode' => $sql->connect_errno,
+                    'error' => $sql->connect_error
+                ]
+            );
+        }
+        return $sql;
     }
 
     /**
@@ -98,6 +123,10 @@ class IPBAuth
         $cfg = IPBAuth::getConfig();
         $sql = IPBAuth::getSQL();
         try {
+            if ($sql->connect_errno) {
+                return $originalname;
+            }
+
             $username = IPBAuth::cleanValue($username);
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
@@ -132,9 +161,11 @@ class IPBAuth
                     if ($stmt->num_rows == 1) {
                         $stmt->bind_result($name);
                         if ($stmt->fetch()) {
-                            $username = User::getCanonicalName($name, 'creatable');
-                            if ($username) {
-                                return $username;
+                            $canonical = MediaWikiServices::getInstance()
+                                ->getUserNameUtils()
+                                ->getCanonical($name, UserRigorOptions::RIGOR_CREATABLE);
+                            if ($canonical !== false) {
+                                return $canonical;
                             }
                         }
                     }
@@ -158,6 +189,10 @@ class IPBAuth
         $cfg = IPBAuth::getConfig();
         $sql = IPBAuth::getSQL();
         try {
+            if ($sql->connect_errno) {
+                return;
+            }
+
             $username = IPBAuth::cleanValue($user->getName());
             $username = $sql->real_escape_string($username);
             $prefix = $cfg->get('IPBDBPrefix');
@@ -233,6 +268,7 @@ class IPBAuth
      */
     public static function userExists($username)
     {
+        $cfg = IPBAuth::getConfig();
         $sql = IPBAuth::getSQL();
         try {
             if ($sql->connect_errno) {
@@ -277,23 +313,57 @@ class IPBAuth
      */
     public static function checkIPBPassword($password, $hash, $salt)
     {
-        /* IPB uses a different method in 3.x, 4.0 and 4.4 */
-        if ($salt == NULL) {
-            /* IPB 4.4+ */
-            return password_verify($password, $hash);
-            
-        } elseif  ( mb_strlen( $salt ) === 22 )	{
-            /* IPB 4.0 */
-            $generatedHash = crypt( $password, '$2a$13$' . $salt );
-            return ($generatedHash == $hash);
+        if (!is_string($hash) || $hash === '') {
+            self::getLogger()->debug('Empty or invalid password hash encountered');
+            return false;
+        }
 
-        } else {
-            /* 3.x */
-            $password = IPBAuth::cleanValue($password);
-            $generatedHash = md5(md5($salt) . md5($password));
-            return ($generatedHash == $hash);
+        // IPS 4.4+ (and current releases) use password_hash()/password_verify().
+        if (password_verify($password, $hash)) {
+            return true;
+        }
 
-		}
+        // Compatibility fallback for some IPS 4.0-era bcrypt records.
+        if ($salt !== null && mb_strlen($salt) === 22) {
+            $generatedHash = crypt($password, '$2a$13$' . $salt);
+            if (is_string($generatedHash) && hash_equals($hash, $generatedHash)) {
+                return true;
+            }
+        }
+
+        // IPS 3.x compatibility.
+        if ($salt !== null && mb_strlen($hash) === 32) {
+            $generatedHash = md5(md5($salt) . md5(self::legacyEscape($password)));
+            return hash_equals($hash, $generatedHash);
+        }
+
+        return false;
+    }
+
+    /**
+     * Reproduces IPS's old IPB3-era escape-on-input behavior used in legacy password hashing.
+     *
+     * @param string $value
+     * @return string
+     */
+    private static function legacyEscape($value)
+    {
+        $value = (string)$value;
+
+        $value = str_replace("&", "&amp;", $value);
+        $value = str_replace("<!--", "&#60;&#33;--", $value);
+        $value = str_replace("-->", "--&#62;", $value);
+        $value = str_ireplace("<script", "&#60;script", $value);
+        $value = str_replace(">", "&gt;", $value);
+        $value = str_replace("<", "&lt;", $value);
+        $value = str_replace('"', "&quot;", $value);
+        $value = str_replace("\n", "<br />", $value);
+        $value = str_replace("$", "&#036;", $value);
+        $value = str_replace("!", "&#33;", $value);
+        $value = str_replace("'", "&#39;", $value);
+        $value = str_replace("\\", "&#092;", $value);
+
+        return $value;
     }
 
 }
