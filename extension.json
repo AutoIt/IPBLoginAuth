@@ -40,9 +40,9 @@
     },
     "config": {
         "IPBDBHost": "localhost",
-        "IPBDBUsername": "autoitforum",
-        "IPBDBPassword": "xxxPassxxx",
-        "IPBDBDatabase": "autoitforum",
+        "IPBDBUsername": "xxx",
+        "IPBDBPassword": "xxx",
+        "IPBDBDatabase": "xxx",
         "IPBDBPrefix": "",
         "IPBVersion": "4",
 
