@@ -31,13 +31,18 @@
         }
     },
     "Hooks": {
-        "UserLoggedIn": "IPBLoginAuth\\Auth\\IPBAuthenticationProvider"
+        "UserLoggedIn": "IPBLoginAuthHooks"
+    },
+    "HookHandlers": {
+        "IPBLoginAuthHooks": {
+            "class": "IPBLoginAuth\\Auth\\IPBAuthenticationProvider"
+        }
     },
     "config": {
-        "IPBDBHost": "",
-        "IPBDBUsername": "",
-        "IPBDBPassword": "",
-        "IPBDBDatabase": "",
+        "IPBDBHost": "localhost",
+        "IPBDBUsername": "autoitforum",
+        "IPBDBPassword": "xxxPassxxx",
+        "IPBDBDatabase": "autoitforum",
         "IPBDBPrefix": "",
         "IPBVersion": "4",
 

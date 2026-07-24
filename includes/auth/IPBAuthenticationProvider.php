@@ -25,17 +25,25 @@ use MediaWiki\Auth\AbstractPrimaryAuthenticationProvider;
 use MediaWiki\Auth\AuthenticationRequest;
 use MediaWiki\Auth\AuthenticationResponse;
 use MediaWiki\Auth\AuthManager;
+use MediaWiki\Auth\Hook\UserLoggedInHook;
 use MediaWiki\Auth\PrimaryAuthenticationProvider;
 use MediaWiki\User\UserRigorOptions;
 use Wikimedia\Rdbms\IDBAccessObject;
 
 use StatusValue;
 
-class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
+class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider implements UserLoggedInHook
 {
     public function autoCreatedAccount($user, $source)
     {
+        $this->synchronizeUser($user);
+    }
 
+    public function postAuthentication($user, AuthenticationResponse $response)
+    {
+        if ($user !== null && $response->status === AuthenticationResponse::PASS) {
+            $this->synchronizeUser($user);
+        }
     }
 
     public function accountCreationType()
@@ -200,7 +208,13 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
 
     public function onUserLoggedIn($user)
     {
-        // When a user logs in, update the local account with information from the IPB database.
+        // Keep the login hook as a fallback for login paths outside AuthManager.
+        $this->synchronizeUser($user);
+    }
+
+    private function synchronizeUser($user)
+    {
+        // Update the local account with information from the IPB database.
         try {
             IPBAuth::updateUser($user);
         } catch (\Throwable $e) {
@@ -208,7 +222,11 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
                 'Failed to synchronize local user profile after login for username "' . (string)$user->getName() . '"',
                 [
                     'username' => $user->getName(),
-                    'exception' => $e
+                    'exception' => $e,
+                    'exceptionClass' => get_class($e),
+                    'exceptionMessage' => $e->getMessage(),
+                    'exceptionFile' => $e->getFile(),
+                    'exceptionLine' => $e->getLine()
                 ]
             );
         }
@@ -225,8 +243,8 @@ class IPBAuthenticationProvider extends AbstractPrimaryAuthenticationProvider
 
     public function providerAllowsPropertyChange($property)
     {
-        // Allow users to change their signature
-	    return $property == 'nickname';
+        // Allow users to change their email address and signature.
+        return in_array($property, ['emailaddress', 'nickname'], true);
     }
 
     public function providerChangeAuthenticationData(AuthenticationRequest $req)

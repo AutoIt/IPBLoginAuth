@@ -9,6 +9,7 @@
 * Bugfix: replaced removed `ConfigFactory::getDefaultInstance()` usage with `MediaWikiServices::getInstance()->getConfigFactory()->makeConfig(...)` for MediaWiki 1.43 compatibility.
 * Bugfix: replaced removed `User::getCanonicalName()` calls with `UserNameUtils->getCanonical(...)` for MediaWiki 1.43 compatibility.
 * Logging: include username directly in authentication and profile-sync log messages for easier troubleshooting with plain-text log formatters.
+* User email now syncronised correctly
 
 ## 1.0.1
 * Bugfix: Users could not edit their signature

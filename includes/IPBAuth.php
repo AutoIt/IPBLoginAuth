@@ -235,16 +235,22 @@ class IPBAuth
                                 $user->confirmEmail();
                             }
                             $user->setRealName($members_display_name);
-                            $groups = explode(",", $mgroup_others);
+                            $groups = explode(",", $mgroup_others ?? '');
                             $groups[] = $member_group_id;
                             $groupmap = $cfg->get('IPBGroupMap');
                             if (is_array($groupmap)) {
+                                $userGroupManager = MediaWikiServices::getInstance()->getUserGroupManager();
+                                $userGroups = $userGroupManager->getUserGroups($user);
                                 foreach ($groupmap as $ug_wiki => $ug_ipb) {
-                                    $user_has_ug = in_array($ug_wiki, $user->getEffectiveGroups());
+                                    $user_has_ug = in_array($ug_wiki, $userGroups, true);
                                     if (in_array($ug_ipb, $groups) && !$user_has_ug) {
-                                        $user->addGroup($ug_wiki);
+                                        $userGroupManager->addUserToGroup($user, $ug_wiki);
+                                        $userGroups[] = $ug_wiki;
                                     } elseif (!in_array($ug_ipb, $groups) && $user_has_ug) {
-                                        $user->removeGroup($ug_wiki);
+                                        $userGroupManager->removeUserFromGroup($user, $ug_wiki);
+                                        $userGroups = array_values(
+                                            array_diff($userGroups, [$ug_wiki])
+                                        );
                                     }
                                 }
                             }
